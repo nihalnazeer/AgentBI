@@ -1,19 +1,18 @@
 from fastapi import FastAPI
 from routers.run_agent import router as agent_router
+from dotenv import load_dotenv
+import warnings
 
-app = FastAPI(
-    title="AgentBI API",
-    description="Simple FastAPI server for testing",
-    version="0.1.0"
-)
+# Load environment variables
+load_dotenv()
 
-# Include the agent router
+# Suppress urllib3 warning
+warnings.filterwarnings("ignore", category=UserWarning, module="urllib3")
+
+app = FastAPI()
+
 app.include_router(agent_router)
 
-@app.get("/")
-async def root():
-    return {"message": "Welcome to the AgentBI API"}
-
-@app.get("/health")
-async def health_check():
-    return {"status": "healthy"}
+if __name__ == "__main__":
+    import uvicorn
+    uvicorn.run(app, host="0.0.0.0", port=8080, reload=True)

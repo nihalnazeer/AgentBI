@@ -1,0 +1,3 @@
+ccshare_path: /Users/mohammednihal/Desktop/Business Intelligence/AgentBI/Backend/config/team.ccshare
+db_name: contextchain_db
+uri: mongodb://localhost:27017
