@@ -1,77 +1,66 @@
-import logging
-import json
-import os
-from datetime import datetime, timedelta
-from services.utils import load_sales_data
-from services.cluster_engine import run_clustering
-from services.price_optimization_engine import optimize_prices
-from services.cash_flow_analysis_engine import analyze_cash_flow
 
-# Configure logging
+from typing import List, Dict, Any
+from datetime import datetime
+import logging
+
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-def check_thresholds():
+def check_thresholds(segmentation_stats: List[Dict[str, Any]] = None, cash_flow_data: List[Dict[str, Any]] = None, db=None) -> Dict[str, Any]:
     try:
-        # Load and process data from all engines
-        sales_data = load_sales_data().to_dict(orient='records')
-        segmentation_result = run_clustering(sales_data, n_clusters=3, max_graph_customers=50, include_reports=True)
-        price_result = optimize_prices()
-        cash_flow_result = analyze_cash_flow()
-
-        # Load historical data for comparison (simulated)
-        historical_stats = {}
-        if os.path.exists("Backend/output/stats.json"):
-            with open("Backend/output/stats.json", "r") as f:
-                historical_stats = json.load(f)["stats"]
-        historical_cash_flow = {}
-        if os.path.exists("/data/strategies/cash_flow_analysis.json"):
-            with open("/data/strategies/cash_flow_analysis.json", "r") as f:
-                historical_cash_flow = json.load(f)
-
-        # Apply threshold rules
-        emails = []
-        current_stats = segmentation_result["stats"]
-        current_cash_flow = cash_flow_result["monthly_data"]
-
-        # Rule 1: High-value customers decrease by >10%
-        high_cluster = next((s for s in current_stats if s["cluster_label"] == "High"), {})
-        high_historical = next((s for s in historical_stats if s["cluster_label"] == "High"), {})
-        if high_cluster and high_historical and high_cluster["customer_count"] > 0:
-            decrease_pct = ((high_historical["customer_count"] - high_cluster["customer_count"]) / high_historical["customer_count"] * 100)
-            if decrease_pct > 10:
-                emails.append({
-                    "to": "admin@example.com",
-                    "subject": "Alert: High-Value Customer Loss",
-                    "body": f"High-value customers decreased by {decrease_pct:.2f}% ({high_historical['customer_count']} to {high_cluster['customer_count']}). Action required."
+        logger.info(f"Checking thresholds with segmentation_stats: {len(segmentation_stats) if segmentation_stats else 0}, cash_flow_data: {len(cash_flow_data) if cash_flow_data else 0}")
+        
+        # Handle None inputs
+        if segmentation_stats is None:
+            logger.warning("segmentation_stats is None, using empty list")
+            segmentation_stats = []
+        if cash_flow_data is None:
+            logger.warning("cash_flow_data is None, using empty list")
+            cash_flow_data = []
+        
+        triggers = []
+        # Threshold logic for segmentation_stats
+        for segment in segmentation_stats:
+            segment_id = segment.get("id", "unknown")
+            avg_order_value = segment.get("avgOrderValue", 0.0)
+            if avg_order_value > 1000:
+                triggers.append({
+                    "segment_id": segment_id,
+                    "trigger_type": "high_value_segment",
+                    "value": avg_order_value,
+                    "threshold": 1000
                 })
-
-        # Rule 2: Net cash flow negative 2 weeks in a row
-        if len(current_cash_flow) >= 2:
-            last_two_weeks = current_cash_flow[-2:]
-            if all(row["Net_Cash_Flow"] < 0 for row in last_two_weeks):
-                emails.append({
-                    "to": "admin@example.com",
-                    "subject": "Escalation: Negative Cash Flow",
-                    "body": f"Net cash flow negative for 2 weeks: {last_two_weeks[0]['Net_Cash_Flow']:.2f} and {last_two_weeks[1]['Net_Cash_Flow']:.2f}. Immediate review needed."
+        
+        # Threshold logic for cash_flow_data
+        for cash_flow in cash_flow_data:
+            revenue = cash_flow.get("sales", 0.0)  # Matches cashflow_engine.py output
+            if revenue < 5000:
+                triggers.append({
+                    "period": cash_flow.get("period", "unknown"),
+                    "trigger_type": "low_cash_flow",
+                    "value": revenue,
+                    "threshold": 5000
                 })
-
-        # Rule 3: Price optimization available
-        if "llm_report" in price_result:
-            emails.append({
-                "to": "marketing@example.com",
-                "subject": "New Price Optimization Available",
-                "body": price_result["llm_report"]
-            })
-
-        # Save to queued emails
-        output_dir = "/data/emails"
-        os.makedirs(output_dir, exist_ok=True)
-        with open(f"{output_dir}/queued_emails.json", "w") as f:
-            json.dump({"emails": emails, "timestamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S")}, f, indent=2)
-        logger.info("Queued emails saved to %s", f"{output_dir}/queued_emails.json")
-
-        return {"status": "checked", "queued_emails": len(emails)}
+        
+        result = {
+            "task_id": 7,
+            "pipeline_id": "AgentBI-Demo",
+            "schema_version": "v0.6.2",
+            "timestamp": datetime.now().strftime("%Y-%m-%d_%H:%M"),
+            "triggers": triggers,
+            "status": "success",
+            "message": f"Processed {len(triggers)} triggers"
+        }
+        logger.info(f"Threshold check completed: {len(triggers)} triggers found")
+        return result
     except Exception as e:
-        logger.error("Threshold check failed: %s", str(e))
-        return {"error": str(e)}
+        logger.error(f"Threshold check failed: {str(e)}", exc_info=True)
+        return {
+            "task_id": 7,
+            "pipeline_id": "AgentBI-Demo",
+            "schema_version": "v0.6.2",
+            "timestamp": datetime.now().strftime("%Y-%m-%d_%H:%M"),
+            "triggers": [],
+            "status": "error",
+            "message": f"Threshold check failed: {str(e)}"
+        }

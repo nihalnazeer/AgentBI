@@ -1,3 +1,5 @@
 .env
 sales_BI.csv
 bvenv/
+schemas/
+resolved_schema/

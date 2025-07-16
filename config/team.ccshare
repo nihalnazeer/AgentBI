@@ -1,5 +1,0 @@
-uri: mongodb+srv://nhaal160:your_actual_password@cluster0.hf2kixo.mongodb.net/?retryWrites=true&w=majority&appName=Cluster0
-db_name: contextchain_db
-roles:
-  - user: nihal
-    role: readWrite
